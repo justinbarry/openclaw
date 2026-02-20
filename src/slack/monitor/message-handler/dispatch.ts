@@ -7,6 +7,7 @@ import { removeAckReactionAfterReply } from "../../../channels/ack-reactions.js"
 import { logAckFailure, logTypingFailure } from "../../../channels/logging.js";
 import { createReplyPrefixOptions } from "../../../channels/reply-prefix.js";
 import { createTypingCallbacks } from "../../../channels/typing.js";
+import { resolveMarkdownTableMode } from "../../../config/markdown-tables.js";
 import { resolveStorePath, updateLastRoute } from "../../../config/sessions.js";
 import { danger, logVerbose, shouldLogVerbose } from "../../../globals.js";
 import { removeSlackReaction } from "../../actions.js";
@@ -247,9 +248,21 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       const draftMessageId = draftStream?.messageId();
       const draftChannelId = draftStream?.channelId();
       const finalText = payload.text;
+      // When using slack-blocks table mode and the text contains a pipe table,
+      // skip the preview→final edit shortcut so the message goes through
+      // sendMessageSlack which converts tables to Block Kit table blocks.
+      const slackBlocksTableMode =
+        resolveMarkdownTableMode({
+          cfg,
+          channel: "slack",
+          accountId: account.accountId,
+        }) === "slack-blocks";
+      const textMayHaveTable =
+        slackBlocksTableMode && typeof finalText === "string" && /\|.+\|/.test(finalText);
       const canFinalizeViaPreviewEdit =
         previewStreamingEnabled &&
         streamMode !== "status_final" &&
+        !textMayHaveTable &&
         mediaCount === 0 &&
         !payload.isError &&
         typeof finalText === "string" &&
