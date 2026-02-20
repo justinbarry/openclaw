@@ -128,23 +128,138 @@ function isSeparatorRow(line: string): boolean {
   return cells.every((cell) => /^\s*:?-+:?\s*$/.test(cell));
 }
 
+// ---------------------------------------------------------------------------
+// Rich text cell parsing — convert markdown inline formatting to Slack
+// rich_text elements (bold, italic, strikethrough, code, links).
+// ---------------------------------------------------------------------------
+
+type RichTextElement = {
+  type: "text" | "link";
+  text?: string;
+  url?: string;
+  style?: { bold?: true; italic?: true; strike?: true; code?: true };
+};
+
+/**
+ * Parse inline markdown formatting into Slack rich_text elements.
+ * Handles: **bold**, *italic*, ~~strike~~, `code`, [text](url)
+ */
+function parseInlineMarkdown(text: string): RichTextElement[] {
+  const elements: RichTextElement[] = [];
+  // Regex to match inline patterns in order of precedence
+  const inlineRe =
+    /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|~~(.+?)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = inlineRe.exec(text)) !== null) {
+    // Push any text before this match
+    if (match.index > lastIndex) {
+      const before = text.slice(lastIndex, match.index);
+      if (before) {
+        elements.push({ type: "text", text: before });
+      }
+    }
+
+    if (match[1] != null || match[2] != null) {
+      // **bold** or __bold__
+      elements.push({
+        type: "text",
+        text: match[1] ?? match[2],
+        style: { bold: true },
+      });
+    } else if (match[3] != null || match[4] != null) {
+      // *italic* or _italic_
+      elements.push({
+        type: "text",
+        text: match[3] ?? match[4],
+        style: { italic: true },
+      });
+    } else if (match[5] != null) {
+      // ~~strikethrough~~
+      elements.push({
+        type: "text",
+        text: match[5],
+        style: { strike: true },
+      });
+    } else if (match[6] != null) {
+      // `code`
+      elements.push({
+        type: "text",
+        text: match[6],
+        style: { code: true },
+      });
+    } else if (match[7] != null && match[8] != null) {
+      // [text](url)
+      elements.push({
+        type: "link",
+        text: match[7],
+        url: match[8],
+      });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining text after last match
+  if (lastIndex < text.length) {
+    const remaining = text.slice(lastIndex);
+    if (remaining) {
+      elements.push({ type: "text", text: remaining });
+    }
+  }
+
+  // If nothing was parsed, return the original text
+  if (elements.length === 0 && text) {
+    elements.push({ type: "text", text });
+  }
+
+  return elements;
+}
+
+/**
+ * Check if cell text contains any markdown formatting.
+ */
+function hasInlineFormatting(text: string): boolean {
+  return /\*\*.+?\*\*|__.+?__|\*.+?\*|_.+?_|~~.+?~~|`[^`]+`|\[.+?\]\(.+?\)/.test(text);
+}
+
+type TableCell =
+  | { type: "raw_text"; text: string }
+  | {
+      type: "rich_text";
+      elements: Array<{ type: "rich_text_section"; elements: RichTextElement[] }>;
+    };
+
+/**
+ * Build a table cell — use rich_text if formatting is present, raw_text otherwise.
+ */
+function buildCell(text: string): TableCell {
+  const trimmed = text.trim() || " ";
+  if (!hasInlineFormatting(trimmed)) {
+    return { type: "raw_text", text: trimmed };
+  }
+  return {
+    type: "rich_text",
+    elements: [
+      {
+        type: "rich_text_section",
+        elements: parseInlineMarkdown(trimmed),
+      },
+    ],
+  };
+}
+
 /**
  * Build a Slack Block Kit table block from parsed table data.
  */
 function buildTableBlock(table: TableData): KnownBlock {
-  const headerRow = table.headers.map((h) => ({
-    type: "raw_text" as const,
-    text: h || " ",
-  }));
+  const headerRow = table.headers.map((h) => buildCell(h || " "));
 
   const dataRows = table.rows.map((row) => {
-    // Pad or truncate to match header count
-    const cells: Array<{ type: "raw_text"; text: string }> = [];
+    const cells: TableCell[] = [];
     for (let i = 0; i < table.headers.length; i++) {
-      cells.push({
-        type: "raw_text" as const,
-        text: (row[i] ?? "–").trim() || " ",
-      });
+      cells.push(buildCell(row[i] ?? "–"));
     }
     return cells;
   });
