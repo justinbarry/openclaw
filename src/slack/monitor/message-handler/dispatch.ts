@@ -300,7 +300,9 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         } catch (err) {
           logVerbose(`slack: status_final completion update failed (${String(err)})`);
         }
-      } else if (mediaCount > 0) {
+      } else if (mediaCount > 0 || textMayHaveTable) {
+        // Clear the draft preview so the final message (with Block Kit table
+        // block or media) is the only one visible.
         await draftStream?.clear();
         hasStreamedMessage = false;
       }
