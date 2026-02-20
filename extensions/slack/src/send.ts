@@ -17,6 +17,7 @@ import {
 } from "openclaw/plugin-sdk/text-runtime";
 import type { SlackTokenSource } from "./accounts.js";
 import { resolveSlackAccount } from "./accounts.js";
+import { extractEnhancedBlocks } from "./blocks-enhanced.js";
 import { buildSlackBlocksFallbackText } from "./blocks-fallback.js";
 import { validateSlackBlocksArray } from "./blocks-input.js";
 import { createSlackWriteClient } from "./client.js";
@@ -365,11 +366,17 @@ export async function sendMessageSlack(
     channel: "slack",
     accountId: account.accountId,
   });
+
+  // Extract enhanced blocks first: headers, callouts, images, task lists
+  // Extract enhanced blocks first: headers, callouts, images, task lists
+  const enhanced = extractEnhancedBlocks(trimmedMessage);
+  const messageForChunking = enhanced.text;
+
   const chunkMode = resolveChunkMode(cfg, "slack", account.accountId);
   const markdownChunks =
     chunkMode === "newline"
-      ? chunkMarkdownTextWithMode(trimmedMessage, chunkLimit, chunkMode)
-      : [trimmedMessage];
+      ? chunkMarkdownTextWithMode(messageForChunking, chunkLimit, chunkMode)
+      : [messageForChunking];
   const chunks = markdownChunks.flatMap((markdown) =>
     markdownToSlackMrkdwnChunks(markdown, chunkLimit, { tableMode }),
   );
@@ -405,18 +412,36 @@ export async function sendMessageSlack(
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
-  } else {
-    for (const chunk of resolvedChunks.length ? resolvedChunks : [""]) {
+    // Send enhanced blocks as follow-up if we had media
+    if (enhanced.blocks.length > 0) {
       const response = await postSlackMessageBestEffort({
         client,
         channelId,
-        text: chunk,
+        text: " ",
         threadTs: opts.threadTs,
         identity: opts.identity,
+        blocks: enhanced.blocks,
+      });
+      lastMessageId = response.ts ?? lastMessageId;
+    }
+  } else {
+    // Send text chunks; attach enhanced blocks to first message
+    const chunkList = resolvedChunks.length ? resolvedChunks : [""];
+    for (let i = 0; i < chunkList.length; i++) {
+      const isFirst = i === 0;
+      const response = await postSlackMessageBestEffort({
+        client,
+        channelId,
+        text: chunkList[i],
+        threadTs: opts.threadTs,
+        identity: opts.identity,
+        // First message gets enhanced blocks (headers, callouts, images)
+        blocks: isFirst && enhanced.blocks.length > 0 ? enhanced.blocks : undefined,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
   }
+
 
   return {
     messageId: lastMessageId || "unknown",

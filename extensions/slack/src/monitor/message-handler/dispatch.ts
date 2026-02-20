@@ -672,6 +672,10 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         } catch (err) {
           logVerbose(`slack: status_final completion update failed (${formatErrorMessage(err)})`);
         }
+      } else if (mediaCount > 0) {
+        // Clear the draft preview so the final message (
+        // media) is the only one visible.
+        await draftStream?.clear();
         hasStreamedMessage = false;
       }
 
