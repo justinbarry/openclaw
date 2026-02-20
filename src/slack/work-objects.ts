@@ -31,21 +31,22 @@ type LinearIssue = {
   project: { name: string } | null;
 };
 
+// Valid Slack tag_color values: red, yellow, green, gray, blue
 const STATE_TYPE_COLORS: Record<string, string> = {
-  backlog: "grey",
+  backlog: "gray",
   unstarted: "blue",
   started: "yellow",
   completed: "green",
   cancelled: "red",
-  triage: "purple",
+  triage: "blue",
 };
 
 const PRIORITY_COLORS: Record<number, string> = {
-  0: "grey",
-  1: "red",
-  2: "orange",
-  3: "yellow",
-  4: "blue",
+  0: "gray", // No priority
+  1: "red", // Urgent
+  2: "red", // High
+  3: "yellow", // Medium
+  4: "blue", // Low
 };
 
 // Simple in-memory cache to avoid re-fetching the same ticket within a message
