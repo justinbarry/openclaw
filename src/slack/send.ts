@@ -100,9 +100,9 @@ async function postSlackMessageBestEffort(params: {
   };
   // Work Object metadata is not yet in the SDK types, so we merge it
   // into a separate payload for apiCall when present.
-  const workObjectExtra = params.workObjectMetadata
-    ? { metadata: JSON.stringify(params.workObjectMetadata) }
-    : {};
+  // Pass metadata as a JSON string — Slack expects a URL-encoded JSON string
+  // for the metadata parameter. The apiCall path sends it as-is.
+  const workObjectExtra = params.workObjectMetadata ? { metadata: params.workObjectMetadata } : {};
   try {
     // Slack Web API types model icon_url and icon_emoji as mutually exclusive.
     // Build payloads in explicit branches so TS and runtime stay aligned.
