@@ -19,6 +19,7 @@ import { buildSlackBlocksFallbackText } from "./blocks-fallback.js";
 import { validateSlackBlocksArray } from "./blocks-input.js";
 import { createSlackWebClient } from "./client.js";
 import { markdownToSlackMrkdwnChunks } from "./format.js";
+import { extractSlackTableBlock } from "./table-blocks.js";
 import { parseSlackTarget } from "./targets.js";
 import { resolveSlackBotToken } from "./token.js";
 
@@ -267,16 +268,34 @@ export async function sendMessageSlack(
     channel: "slack",
     accountId: account.accountId,
   });
+
+  // For slack-blocks mode: extract the first table as a Block Kit table block,
+  // then render the remaining text normally (falling back to "code" for any
+  // additional tables that couldn't become blocks).
+  let tableBlock: KnownBlock | undefined;
+  let messageForChunking = trimmedMessage;
+  if (tableMode === "slack-blocks") {
+    const extraction = extractSlackTableBlock(trimmedMessage);
+    if (extraction.tableBlock) {
+      tableBlock = extraction.tableBlock;
+      messageForChunking = extraction.text;
+    }
+  }
+
+  // Use "code" as fallback for any remaining tables (only relevant if
+  // slack-blocks extracted one and there are more, or if mode isn't slack-blocks).
+  const effectiveTableMode = tableMode === "slack-blocks" ? "code" : tableMode;
+
   const chunkMode = resolveChunkMode(cfg, "slack", account.accountId);
   const markdownChunks =
     chunkMode === "newline"
-      ? chunkMarkdownTextWithMode(trimmedMessage, chunkLimit, chunkMode)
-      : [trimmedMessage];
+      ? chunkMarkdownTextWithMode(messageForChunking, chunkLimit, chunkMode)
+      : [messageForChunking];
   const chunks = markdownChunks.flatMap((markdown) =>
-    markdownToSlackMrkdwnChunks(markdown, chunkLimit, { tableMode }),
+    markdownToSlackMrkdwnChunks(markdown, chunkLimit, { tableMode: effectiveTableMode }),
   );
-  if (!chunks.length && trimmedMessage) {
-    chunks.push(trimmedMessage);
+  if (!chunks.length && messageForChunking) {
+    chunks.push(messageForChunking);
   }
   const mediaMaxBytes =
     typeof account.config.mediaMaxMb === "number"
@@ -305,14 +324,31 @@ export async function sendMessageSlack(
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
-  } else {
-    for (const chunk of chunks.length ? chunks : [""]) {
+    // Send table block as a follow-up if we had media
+    if (tableBlock) {
       const response = await postSlackMessageBestEffort({
         client,
         channelId,
-        text: chunk,
+        text: " ",
         threadTs: opts.threadTs,
         identity: opts.identity,
+        blocks: [tableBlock],
+      });
+      lastMessageId = response.ts ?? lastMessageId;
+    }
+  } else {
+    // Send text chunks; attach the table block to the last text message.
+    const chunkList = chunks.length ? chunks : [""];
+    for (let i = 0; i < chunkList.length; i++) {
+      const isLast = i === chunkList.length - 1;
+      const response = await postSlackMessageBestEffort({
+        client,
+        channelId,
+        text: chunkList[i],
+        threadTs: opts.threadTs,
+        identity: opts.identity,
+        // Attach table block to the last text chunk
+        blocks: isLast && tableBlock ? [tableBlock] : undefined,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
