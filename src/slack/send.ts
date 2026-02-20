@@ -22,7 +22,6 @@ import { markdownToSlackMrkdwnChunks } from "./format.js";
 import { extractSlackTableBlock } from "./table-blocks.js";
 import { parseSlackTarget } from "./targets.js";
 import { resolveSlackBotToken } from "./token.js";
-import { buildLinearWorkObjects, type WorkObjectMetadata } from "./work-objects.js";
 
 const SLACK_TEXT_LIMIT = 4000;
 
@@ -90,7 +89,6 @@ async function postSlackMessageBestEffort(params: {
   threadTs?: string;
   identity?: SlackSendIdentity;
   blocks?: (Block | KnownBlock)[];
-  workObjectMetadata?: WorkObjectMetadata;
 }) {
   const basePayload = {
     channel: params.channelId,
@@ -98,38 +96,9 @@ async function postSlackMessageBestEffort(params: {
     thread_ts: params.threadTs,
     ...(params.blocks?.length ? { blocks: params.blocks } : {}),
   };
-  // Work Object metadata is not yet in the SDK types, so we merge it
-  // into a separate payload for apiCall when present.
-  // Pass metadata as a JSON string — Slack expects a URL-encoded JSON string
-  // for the metadata parameter. The apiCall path sends it as-is.
-  const workObjectExtra = params.workObjectMetadata ? { metadata: params.workObjectMetadata } : {};
   try {
     // Slack Web API types model icon_url and icon_emoji as mutually exclusive.
     // Build payloads in explicit branches so TS and runtime stay aligned.
-    const identityPayload = params.identity?.iconUrl
-      ? {
-          ...(params.identity.username ? { username: params.identity.username } : {}),
-          icon_url: params.identity.iconUrl,
-        }
-      : params.identity?.iconEmoji
-        ? {
-            ...(params.identity.username ? { username: params.identity.username } : {}),
-            icon_emoji: params.identity.iconEmoji,
-          }
-        : params.identity?.username
-          ? { username: params.identity.username }
-          : {};
-
-    // When Work Object metadata is present, use apiCall to pass the
-    // metadata field which isn't in the SDK types yet.
-    if (params.workObjectMetadata) {
-      return (await params.client.apiCall("chat.postMessage", {
-        ...basePayload,
-        ...identityPayload,
-        ...workObjectExtra,
-      })) as Awaited<ReturnType<WebClient["chat"]["postMessage"]>>;
-    }
-
     if (params.identity?.iconUrl) {
       return await params.client.chat.postMessage({
         ...basePayload,
@@ -333,14 +302,6 @@ export async function sendMessageSlack(
       ? account.config.mediaMaxMb * 1024 * 1024
       : undefined;
 
-  // Build Work Object metadata for any Linear ticket identifiers in the message.
-  // This runs async but is fast (cached after first fetch) and only fires when
-  // LINEAR_API_KEY is set.
-  const workObjects =
-    tableMode === "slack-blocks"
-      ? await buildLinearWorkObjects(trimmedMessage).catch(() => null)
-      : null;
-
   let lastMessageId = "";
   if (opts.mediaUrl) {
     const [firstChunk, ...rest] = chunks;
@@ -372,23 +333,11 @@ export async function sendMessageSlack(
         threadTs: opts.threadTs,
         identity: opts.identity,
         blocks: [tableBlock],
-        workObjectMetadata: workObjects ?? undefined,
-      });
-      lastMessageId = response.ts ?? lastMessageId;
-    } else if (workObjects) {
-      // No table block but we have work objects — post them on a minimal message
-      const response = await postSlackMessageBestEffort({
-        client,
-        channelId,
-        text: " ",
-        threadTs: opts.threadTs,
-        identity: opts.identity,
-        workObjectMetadata: workObjects,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
   } else {
-    // Send text chunks; attach the table block and work objects to the last message.
+    // Send text chunks; attach the table block to the last text message.
     const chunkList = chunks.length ? chunks : [""];
     for (let i = 0; i < chunkList.length; i++) {
       const isLast = i === chunkList.length - 1;
@@ -398,8 +347,8 @@ export async function sendMessageSlack(
         text: chunkList[i],
         threadTs: opts.threadTs,
         identity: opts.identity,
+        // Attach table block to the last text chunk
         blocks: isLast && tableBlock ? [tableBlock] : undefined,
-        workObjectMetadata: isLast ? (workObjects ?? undefined) : undefined,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
