@@ -677,6 +677,13 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         // media) is the only one visible.
         await draftStream?.clear();
         hasStreamedMessage = false;
+      } else if (previewStreamingEnabled && !canFinalizeViaPreviewEdit) {
+        // Draft stream may still be in-flight (throttled send hasn't completed
+        // yet, so draftMessageId is undefined). Stop and clear it to prevent
+        // a duplicate message when the throttled send eventually fires.
+        draftStream?.stop();
+        await draftStream?.clear();
+        hasStreamedMessage = false;
       }
 
       const result = await deliverFinalizableDraftPreview({
@@ -837,6 +844,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     draftStream?.update(trimmed);
     hasStreamedMessage = true;
   };
+
   const onDraftBoundary = !shouldUseDraftStream
     ? undefined
     : async () => {
