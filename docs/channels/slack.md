@@ -952,6 +952,34 @@ in Slack.
 
 Same-chat `/approve` also works in Slack channels and DMs that already support commands. See [Exec approvals](/tools/exec-approvals) for the full approval forwarding model.
 
+## Block Kit
+
+OpenClaw supports Slack Block Kit for rich message formatting via the `message` tool.
+
+Use the `slackBlocks` parameter to send Block Kit payloads:
+
+```json
+{
+  "action": "send",
+  "channel": "slack",
+  "target": "channel:C123",
+  "slackBlocks": [
+    { "type": "header", "text": { "type": "plain_text", "text": "Status Update" } },
+    { "type": "section", "text": { "type": "mrkdwn", "text": "*Build completed*" } },
+    { "type": "divider" },
+    { "type": "context", "elements": [{ "type": "mrkdwn", "text": "Deployed at <date>" }] }
+  ]
+}
+```
+
+Notes:
+
+- Maximum 50 blocks per message (Slack API limit)
+- `slackBlocks` cannot be combined with `media` on the same message
+- Common block types: `section`, `header`, `divider`, `image`, `context`, `actions`
+- Block interactions (button clicks, selects) emit `Slack interaction:` system events
+- For text-only messages, OpenClaw auto-converts markdown headers, callouts, and images to Block Kit blocks
+
 ## Events and operational behavior
 
 - Message edits/deletes/thread broadcasts are mapped into system events.

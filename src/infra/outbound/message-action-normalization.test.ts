@@ -181,4 +181,32 @@ describe("normalizeMessageActionInput", () => {
       }),
     ).toThrow(/requires a target/);
   });
+
+  it("maps slackBlocks to blocks for Slack channel", () => {
+    const normalized = normalizeMessageActionInput({
+      action: "send",
+      args: {
+        target: "channel:C1",
+        slackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Hello" } }],
+      },
+    });
+
+    expect(normalized.blocks).toEqual([
+      { type: "section", text: { type: "mrkdwn", text: "Hello" } },
+    ]);
+    expect("slackBlocks" in normalized).toBe(false);
+  });
+
+  it("removes slackBlocks when null", () => {
+    const normalized = normalizeMessageActionInput({
+      action: "send",
+      args: {
+        target: "channel:C1",
+        slackBlocks: null,
+      },
+    });
+
+    expect("slackBlocks" in normalized).toBe(false);
+    expect("blocks" in normalized).toBe(false);
+  });
 });

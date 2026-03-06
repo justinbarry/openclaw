@@ -21,6 +21,15 @@ export function normalizeMessageActionInput(params: {
   const inferredChannel =
     explicitChannel || normalizeMessageChannel(toolContext?.currentChannelProvider) || "";
 
+  // Map slackBlocks → blocks for Slack channel compatibility
+  // (agent-facing schema uses slackBlocks to avoid collision with Discord components)
+  if ("slackBlocks" in normalizedArgs) {
+    if (normalizedArgs.slackBlocks != null) {
+      normalizedArgs.blocks = normalizedArgs.slackBlocks;
+    }
+    delete normalizedArgs.slackBlocks;
+  }
+
   const explicitTarget = normalizeOptionalString(normalizedArgs.target) ?? "";
   const hasLegacyTargetFields =
     typeof normalizedArgs.to === "string" || typeof normalizedArgs.channelId === "string";
