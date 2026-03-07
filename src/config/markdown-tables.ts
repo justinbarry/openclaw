@@ -58,7 +58,7 @@ export const DEFAULT_TABLE_MODES: ReadonlyMap<string, MarkdownTableMode> = new P
 );
 
 const isMarkdownTableMode = (value: unknown): value is MarkdownTableMode =>
-  value === "off" || value === "bullets" || value === "code" || value === "block";
+  value === "off" || value === "bullets" || value === "code" || value === "block" || value === "blocks";
 
 function resolveMarkdownModeFromSection(
   section: MarkdownConfigSection | undefined,

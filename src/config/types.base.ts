@@ -84,10 +84,10 @@ export type SlackChannelStreamingConfig = Pick<
   "mode" | "chunkMode" | "preview" | "block" | "nativeTransport"
 >;
 
-export type MarkdownTableMode = "off" | "bullets" | "code" | "block";
+export type MarkdownTableMode = "off" | "bullets" | "code" | "block" | "blocks";
 
 export type MarkdownConfig = {
-  /** Table rendering mode (off|bullets|code|block). */
+  /** Table rendering mode (off|bullets|code|block|blocks). */
   tables?: MarkdownTableMode;
 };
 

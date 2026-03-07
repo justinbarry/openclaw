@@ -17,13 +17,14 @@ import {
 } from "openclaw/plugin-sdk/text-runtime";
 import type { SlackTokenSource } from "./accounts.js";
 import { resolveSlackAccount } from "./accounts.js";
-import { extractEnhancedBlocks } from "./blocks-enhanced.js";
+import { extractEnhancedBlocks, extractOrderedSegments } from "./blocks-enhanced.js";
 import { buildSlackBlocksFallbackText } from "./blocks-fallback.js";
 import { validateSlackBlocksArray } from "./blocks-input.js";
 import { createSlackWriteClient } from "./client.js";
 import { markdownToSlackMrkdwnChunks } from "./format.js";
 import { SLACK_TEXT_LIMIT } from "./limits.js";
 import { loadOutboundMediaFromUrl } from "./runtime-api.js";
+import { buildSlackTableBlock, extractFirstTable } from "./table-blocks.js";
 import { parseSlackTarget } from "./targets.js";
 import { resolveSlackBotToken } from "./token.js";
 const SLACK_UPLOAD_SSRF_POLICY = {
@@ -367,24 +368,63 @@ export async function sendMessageSlack(
     accountId: account.accountId,
   });
 
-  // Extract enhanced blocks first: headers, callouts, images, task lists
-  // Extract enhanced blocks first: headers, callouts, images, task lists
-  const enhanced = extractEnhancedBlocks(trimmedMessage);
-  const messageForChunking = enhanced.text;
-
+  const effectiveTableMode = tableMode === "blocks" ? "code" : tableMode;
   const chunkMode = resolveChunkMode(cfg, "slack", account.accountId);
-  const markdownChunks =
-    chunkMode === "newline"
-      ? chunkMarkdownTextWithMode(messageForChunking, chunkLimit, chunkMode)
-      : [messageForChunking];
-  const chunks = markdownChunks.flatMap((markdown) =>
-    markdownToSlackMrkdwnChunks(markdown, chunkLimit, { tableMode }),
-  );
+
+  // When tableMode is "blocks", use ordered extraction that preserves
+  // document structure: headers, callouts, text, and tables stay in the
+  // order they appear in the original markdown.
+  const useOrderedBlocks = tableMode === "blocks";
+  let combinedBlocks: (Block | KnownBlock)[] = [];
+  let chunks: string[] = [];
+
+  if (useOrderedBlocks) {
+    const segments = extractOrderedSegments(trimmedMessage);
+    for (const seg of segments) {
+      if (seg.kind === "blocks") {
+        combinedBlocks.push(...seg.blocks);
+      } else {
+        // Extract first table from this text segment
+        const { textWithoutTable, table } = extractFirstTable(seg.text);
+        // Convert remaining text to mrkdwn section blocks
+        const mrkdwnChunks = markdownToSlackMrkdwnChunks(textWithoutTable, chunkLimit, {
+          tableMode: effectiveTableMode,
+        });
+        for (const chunk of mrkdwnChunks) {
+          if (chunk.trim()) {
+            combinedBlocks.push({
+              type: "section",
+              text: { type: "mrkdwn", text: chunk },
+            } as KnownBlock);
+            chunks.push(chunk);
+          }
+        }
+        if (table) {
+          combinedBlocks.push(buildSlackTableBlock(table));
+        }
+      }
+    }
+  } else {
+    // Legacy path: extract enhanced blocks (unordered) + text
+    const enhanced = extractEnhancedBlocks(trimmedMessage);
+    const messageForChunking = enhanced.text;
+    const markdownChunks =
+      chunkMode === "newline"
+        ? chunkMarkdownTextWithMode(messageForChunking, chunkLimit, chunkMode)
+        : [messageForChunking];
+    chunks = markdownChunks.flatMap((markdown) =>
+      markdownToSlackMrkdwnChunks(markdown, chunkLimit, { tableMode }),
+    );
+  }
   const resolvedChunks = resolveTextChunksWithFallback(trimmedMessage, chunks);
+
   const mediaMaxBytes =
     typeof account.config.mediaMaxMb === "number"
       ? account.config.mediaMaxMb * 1024 * 1024
       : undefined;
+
+  // Plain fallback text for notifications / accessibility
+  const fallbackText = chunks.join("\n").trim() || " ";
 
   let lastMessageId = "";
   if (opts.mediaUrl) {
@@ -412,31 +452,39 @@ export async function sendMessageSlack(
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
-    // Send enhanced blocks as follow-up if we had media
-    if (enhanced.blocks.length > 0) {
+    // Send enhanced/table blocks as follow-up if we had media
+    if (combinedBlocks.length > 0) {
       const response = await postSlackMessageBestEffort({
         client,
         channelId,
-        text: " ",
+        text: fallbackText,
         threadTs: opts.threadTs,
         identity: opts.identity,
-        blocks: enhanced.blocks,
+        blocks: combinedBlocks,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }
+  } else if (combinedBlocks.length > 0) {
+    // All content is in blocks — send as a single blocks message
+    const response = await postSlackMessageBestEffort({
+      client,
+      channelId,
+      text: fallbackText,
+      threadTs: opts.threadTs,
+      identity: opts.identity,
+      blocks: combinedBlocks,
+    });
+    lastMessageId = response.ts ?? lastMessageId;
   } else {
-    // Send text chunks; attach enhanced blocks to first message
+    // No structured blocks — send text chunks normally
     const chunkList = resolvedChunks.length ? resolvedChunks : [""];
-    for (let i = 0; i < chunkList.length; i++) {
-      const isFirst = i === 0;
+    for (const chunk of chunkList) {
       const response = await postSlackMessageBestEffort({
         client,
         channelId,
-        text: chunkList[i],
+        text: chunk,
         threadTs: opts.threadTs,
         identity: opts.identity,
-        // First message gets enhanced blocks (headers, callouts, images)
-        blocks: isFirst && enhanced.blocks.length > 0 ? enhanced.blocks : undefined,
       });
       lastMessageId = response.ts ?? lastMessageId;
     }

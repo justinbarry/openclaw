@@ -361,3 +361,117 @@ export function extractEnhancedBlocks(text: string): ExtractedContent {
     text: convertedText,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Ordered extraction — preserves document order
+// ---------------------------------------------------------------------------
+
+export type ContentSegment =
+  | { kind: "blocks"; blocks: KnownBlock[] }
+  | { kind: "text"; text: string };
+
+/**
+ * Single-pass extraction that preserves document order.
+ *
+ * Processes line-by-line, emitting header/callout/image blocks at their
+ * original position in the document and collecting surrounding text into
+ * text segments.  Inline transforms (task lists, code hints) are applied
+ * to each text segment.
+ */
+export function extractOrderedSegments(text: string): ContentSegment[] {
+  const segments: ContentSegment[] = [];
+  const lines = text.split("\n");
+  let textBuffer: string[] = [];
+
+  const flushText = () => {
+    const joined = textBuffer.join("\n");
+    const transformed = addCodeBlockLanguageHints(convertTaskLists(joined));
+    if (transformed.trim()) {
+      segments.push({ kind: "text", text: transformed });
+    }
+    textBuffer = [];
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // --- Headers (H1–H3) ---
+    const headerMatch = line?.match(/^(#{1,3})\s+(.+)$/);
+    if (headerMatch) {
+      flushText();
+      const level = headerMatch[1]?.length ?? 1;
+      const headerText = headerMatch[2]?.trim() ?? "";
+      if (headerText) {
+        const blocks: KnownBlock[] = [
+          { type: "header", text: { type: "plain_text", text: headerText, emoji: true } },
+        ];
+        if (level <= 2) {
+          blocks.push({ type: "divider" });
+        }
+        segments.push({ kind: "blocks", blocks });
+      }
+      i++;
+      continue;
+    }
+
+    // H4+ → bold text (stays in text buffer)
+    const h4Match = line?.match(/^(#{4,})\s+(.+)$/);
+    if (h4Match) {
+      textBuffer.push(`**${h4Match[2]?.trim() ?? ""}**`);
+      i++;
+      continue;
+    }
+
+    // --- Callouts ---
+    const calloutMatch = line?.match(CALLOUT_PATTERN);
+    if (calloutMatch) {
+      flushText();
+      const typeKey = calloutMatch[1]?.toUpperCase() as CalloutType;
+      const firstLineText = calloutMatch[2]?.trim() ?? "";
+      const config = CALLOUT_CONFIG[typeKey.toLowerCase() as CalloutType] ?? CALLOUT_CONFIG.note;
+      const contentLines: string[] = firstLineText ? [firstLineText] : [];
+      i++;
+      while (i < lines.length && lines[i]?.startsWith("> ")) {
+        const continuation = lines[i]?.slice(2).trim();
+        if (continuation) {
+          contentLines.push(continuation);
+        }
+        i++;
+      }
+      const content = contentLines.join("\n");
+      const calloutText = content
+        ? `${config.emoji} *${config.label}*\n${content}`
+        : `${config.emoji} *${config.label}*`;
+      segments.push({
+        kind: "blocks",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: calloutText } }],
+      });
+      continue;
+    }
+
+    // --- Standalone images ---
+    const trimmed = line?.trim() ?? "";
+    const imageMatch = trimmed.match(IMAGE_PATTERN);
+    if (imageMatch) {
+      const alt = imageMatch[1] ?? "image";
+      const url = imageMatch[2] ?? "";
+      if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+        flushText();
+        segments.push({
+          kind: "blocks",
+          blocks: [{ type: "image", image_url: url, alt_text: alt || "image" }],
+        });
+        i++;
+        continue;
+      }
+    }
+
+    // --- Regular text line ---
+    textBuffer.push(line ?? "");
+    i++;
+  }
+
+  flushText();
+  return segments;
+}
