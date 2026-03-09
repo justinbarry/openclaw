@@ -21,6 +21,13 @@ export function registerMessageSendCommand(message: Command, helpers: MessageCli
         )
         .option("--delivery <json>", "Shared delivery preferences as JSON")
         .option("--pin", "Request that the delivered message be pinned when supported", false)
+        .option(
+          "--buttons <json>",
+          "Telegram inline keyboard buttons as JSON (array of button rows)",
+        )
+        .option("--components <json>", "Discord components payload as JSON")
+        .option("--card <json>", "Adaptive Card JSON object (when supported by the channel)")
+        .option("--slack-blocks <json>", "Slack Block Kit blocks array as JSON (max 50 blocks)")
         .option("--reply-to <id>", "Reply-to message id")
         .option("--thread-id <id>", "Thread id (Telegram forum thread)")
         .option("--gif-playback", "Treat video media as GIF playback (WhatsApp only).", false)
