@@ -298,4 +298,8 @@ export default defineConfig([
     },
   }),
   ...buildBundledPluginConfigs(),
+  nodeBuildConfig({
+    // Plugin runtime entry for jiti lazy loading
+    entry: { "plugins/runtime/index": "src/plugins/runtime/index.ts" },
+  }),
 ]);
