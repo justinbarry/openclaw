@@ -138,6 +138,15 @@ ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 docs/superpowers
 
+# Runtime databases and queues
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db-wal
+context.sqlite*
+data/
+queue/
+
 # Generated docs baseline artifacts (locally generated, only hashes tracked)
 docs/.generated/*.json
 docs/.generated/*.jsonl
