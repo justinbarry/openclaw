@@ -22,14 +22,7 @@ import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
-import {
-  createLinearCommentTool,
-  createLinearIssueTool,
-  createLinearProjectTool,
-  createLinearQueueTool,
-  createLinearRelationTool,
-  createLinearTeamTool,
-} from "./tools/linear-tool.js";
+import { createLinearTool } from "./tools/linear-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -328,13 +321,8 @@ export function createOpenClawTools(
       sandboxed: options?.sandboxed,
     }),
     ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
-    // Linear tools — powered by Linear GraphQL API via LINEAR_API_KEY
-    createLinearIssueTool(),
-    createLinearProjectTool(),
-    createLinearQueueTool(),
-    createLinearCommentTool(),
-    createLinearTeamTool(),
-    createLinearRelationTool(),
+    // Linear — full GraphQL API pass-through via LINEAR_API_KEY
+    createLinearTool(),
   ];
 
   if (options?.disablePluginTools) {
