@@ -22,6 +22,7 @@ import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
+import { createLinearHelperTools } from "./tools/linear-helpers.js";
 import { createLinearTool } from "./tools/linear-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
@@ -323,6 +324,7 @@ export function createOpenClawTools(
     ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
     // Linear — full GraphQL API pass-through via LINEAR_API_KEY
     createLinearTool(),
+    ...createLinearHelperTools(),
   ];
 
   if (options?.disablePluginTools) {

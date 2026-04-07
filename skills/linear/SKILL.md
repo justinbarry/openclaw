@@ -10,9 +10,26 @@ metadata:
 
 # Linear GraphQL API — Agent Reference
 
-## Tool
+## Tools
 
-`linear(query: string, variables?: object) -> data`
+### High-level helpers (use these first)
+
+These cover the most common tasks without hand-crafting GraphQL:
+
+| Tool                                                                                                                    | What it does                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `linear_get_project(query)`                                                                                             | Look up a project by name fragment, URL slug, or UUID. Returns id, description, content, status, milestones, recent updates. |
+| `linear_update_project(id, description?, content?, name?, status_id?)`                                                  | Update a project's description, markdown body, name, or status.                                                              |
+| `linear_create_project_update(project_id, body, health?)`                                                               | Post a status update to a project. `health`: `"onTrack"` \| `"atRisk"` \| `"offTrack"`.                                      |
+| `linear_find_issue(query, team_key?)`                                                                                   | Search issues by text or exact identifier (`"ENG-42"`).                                                                      |
+| `linear_update_issue(id, title?, description?, state_id?, assignee_id?, priority?, project_id?, due_date?, label_ids?)` | Update any fields on an issue. Pass `"null"` string to clear optional FK fields.                                             |
+| `linear_get_team(query)`                                                                                                | Get a team by key (`"ENG"`) or name fragment — includes workflow states, labels, members, active cycle.                      |
+| `linear_search_docs(term, project_id?)`                                                                                 | Search documents by keyword, optionally scoped to a project.                                                                 |
+| `linear_manage_doc(...)`                                                                                                | Create (needs `title` + `project_id` or `issue_id`) or update (needs `doc_id`) a document. `content` is markdown.            |
+
+### Raw GraphQL escape hatch
+
+`linear(query: string, variables?: object) -> data`  
 Executes any Linear GraphQL query or mutation. Pass the full GraphQL document as `query` and any input values as `variables`.
 
 ---
@@ -679,6 +696,33 @@ completedAt: DateTime
 canceledAt: DateTime
 ```
 
+### `DocumentCreateInput`
+
+```
+title: String            # document title
+content: String          # markdown body
+projectId: String        # attach to a project
+issueId: String          # attach to an issue (UUID or identifier e.g. "ENG-42")
+initiativeId: String     # attach to an initiative
+icon: String             # emoji icon
+color: String            # icon color
+sortOrder: Float
+```
+
+### `DocumentUpdateInput`
+
+```
+title: String
+content: String          # markdown, replaces entire body
+projectId: String        # move to a different project
+issueId: String
+initiativeId: String
+icon: String
+color: String
+trashed: Boolean
+sortOrder: Float
+```
+
 ### `CommentCreateInput`
 
 ```
@@ -816,6 +860,19 @@ createdAt updatedAt editedAt
 url reactionData
 ```
 
+### `Document` (most useful)
+
+```graphql
+id title url
+content           # markdown body
+project { id name }
+issue { id identifier title }
+initiative { id name }
+creator { id name displayName }
+updatedBy { id name displayName }
+createdAt updatedAt archivedAt trashed
+```
+
 ### `IssueRelation` (most useful)
 
 ```graphql
@@ -927,3 +984,54 @@ Check `rateLimitStatus { requestsRemaining limit resetsAt }` if hitting limits. 
 
 - **Archived**: soft-removed, retrievable with `includeArchived: true`
 - **Trashed** (`issueDelete`/`projectDelete`): moved to trash, permanently deleted after 30 days. Use `issueArchive` to archive, `issueDelete` to trash.
+
+### 13. Creating a document on a project
+
+Documents are first-class content attached to projects, issues, or initiatives.
+
+```javascript
+// Step 1 – get the project ID
+linear(`query { projects(first: 20) { nodes { id name } } }`);
+
+// Step 2 – create the document
+linear(
+  `mutation CreateDoc($input: DocumentCreateInput!) {
+     documentCreate(input: $input) {
+       success
+       document { id title url }
+     }
+   }`,
+  {
+    input: {
+      title: "Architecture Overview",
+      content: "# Architecture\n\nDescribe the design here.",
+      projectId: "PROJECT_UUID",
+    },
+  },
+);
+```
+
+```javascript
+// Update an existing document's content
+linear(
+  `mutation UpdateDoc($id: String!, $input: DocumentUpdateInput!) {
+     documentUpdate(id: $id, input: $input) {
+       success
+       document { id title updatedAt }
+     }
+   }`,
+  { id: "DOC_UUID", input: { content: "# Updated content\n\nNew text here." } },
+);
+```
+
+```javascript
+// List documents for a project
+linear(
+  `query($filter: DocumentFilter) {
+     documents(filter: $filter, first: 50) {
+       nodes { id title url updatedAt project { id name } }
+     }
+   }`,
+  { filter: { project: { id: { eq: "PROJECT_UUID" } } } },
+);
+```
