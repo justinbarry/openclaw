@@ -12,6 +12,11 @@ import {
   normalizeStringifiedOptionalString,
 } from "../shared/string-coerce.js";
 import { resolveGatewayAuthOptions } from "./gateway-secret-options.js";
+import {
+  runSlackMcpAuth,
+  loadSlackMcpCredentials,
+  buildSlackMcpServerConfig,
+} from "./mcp-slack-auth.js";
 
 function fail(message: string): never {
   defaultRuntime.error(message);
@@ -147,4 +152,71 @@ export function registerMcpCli(program: Command) {
       }
       defaultRuntime.log(`Removed MCP server "${name}" from ${result.path}.`);
     });
+
+  // --- Slack MCP auth ---
+  const auth = mcp.command("auth").description("Authenticate MCP server integrations");
+
+  auth
+    .command("slack")
+    .description("Authorize OpenClaw to use the Slack MCP Server (https://mcp.slack.com/mcp)")
+    .requiredOption("--client-id <id>", "Slack app client ID")
+    .requiredOption("--client-secret <secret>", "Slack app client secret")
+    .option(
+      "--port <port>",
+      "Local port for OAuth redirect callback",
+      (v) => Number.parseInt(v, 10),
+      8765,
+    )
+    .option("--no-open", "Print the authorization URL instead of opening a browser")
+    .option("--register-only", "Register stored credentials without re-authenticating")
+    .action(
+      async (opts: {
+        clientId: string;
+        clientSecret: string;
+        port: number;
+        open: boolean;
+        registerOnly?: boolean;
+      }) => {
+        try {
+          let credentials = loadSlackMcpCredentials();
+
+          if (opts.registerOnly) {
+            if (!credentials) {
+              fail("No stored Slack MCP credentials found. Run without --register-only first.");
+            }
+          } else {
+            defaultRuntime.log("Starting Slack MCP OAuth flow...");
+            const result = await runSlackMcpAuth({
+              clientId: opts.clientId,
+              clientSecret: opts.clientSecret,
+              port: opts.port,
+              noOpen: !opts.open,
+              log: defaultRuntime.log,
+            });
+            credentials = result.credentials;
+            defaultRuntime.log(
+              `Slack MCP authorized${result.teamName ? ` for team: ${result.teamName}` : ""}.`,
+            );
+          }
+
+          // Register the MCP server in OpenClaw config
+          const serverConfig = buildSlackMcpServerConfig(credentials);
+          const setResult = await setConfiguredMcpServer({
+            name: "slack",
+            server: serverConfig,
+          });
+          if (!setResult.ok) {
+            fail(setResult.error);
+          }
+
+          defaultRuntime.log(`Registered Slack MCP server as "slack" in ${setResult.path}.`);
+          defaultRuntime.log(
+            "Slack MCP tools (search, send, read channels/threads, canvases) are now available to agents.",
+          );
+        } catch (err) {
+          defaultRuntime.error(String(err));
+          defaultRuntime.exit(1);
+        }
+      },
+    );
 }
