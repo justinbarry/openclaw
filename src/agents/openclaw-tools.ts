@@ -22,9 +22,8 @@ import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
-// Linear disabled — re-enable when ready to configure LINEAR_API_KEY
-// import { createLinearHelperTools } from "./tools/linear-helpers.js";
-// import { createLinearTool } from "./tools/linear-tool.js";
+import { createLinearHelperTools } from "./tools/linear-helpers.js";
+import { createLinearTool } from "./tools/linear-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -323,9 +322,9 @@ export function createOpenClawTools(
       sandboxed: options?.sandboxed,
     }),
     ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
-    // Linear — disabled until LINEAR_API_KEY is configured
-    // createLinearTool(),
-    // ...createLinearHelperTools(),
+    // Linear — full GraphQL API pass-through via LINEAR_API_KEY
+    createLinearTool(),
+    ...createLinearHelperTools(),
   ];
 
   if (options?.disablePluginTools) {
