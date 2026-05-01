@@ -371,12 +371,27 @@ export function shouldResolveExecApprovalUnavailableInline(params: {
   trigger?: string;
   unavailableReason: ExecApprovalUnavailableReason | null;
   preResolvedDecision: string | null | undefined;
+  askFallback?: ExecSecurity | null;
 }): boolean {
-  return (
-    isHeadlessExecTrigger(params.trigger) &&
-    params.unavailableReason === "no-approval-route" &&
-    params.preResolvedDecision === null
-  );
+  // Headless triggers always resolve inline (they can't wait).
+  if (isHeadlessExecTrigger(params.trigger)) {
+    return true;
+  }
+  // When askFallback would auto-approve ("full") or the fallback grants
+  // allowlist-level access, there's no point blocking — the effective policy
+  // says "if nobody objects, allow it," and there's nobody to object.
+  const fallback = params.askFallback ?? null;
+  const askFallbackAllows = fallback === "full" || fallback === "allowlist";
+  if (askFallbackAllows && params.preResolvedDecision === null) {
+    // No approval route exists AND askFallback says to allow — resolve inline.
+    // Covers both "no-approval-route" (no approvers configured) and
+    // "initiating-platform-unsupported" (e.g. linear-agent-bridge plugin channel).
+    return true;
+  }
+  if (params.unavailableReason !== "no-approval-route" || params.preResolvedDecision !== null) {
+    return false;
+  }
+  return askFallbackAllows;
 }
 
 export function buildHeadlessExecApprovalDeniedMessage(params: {
