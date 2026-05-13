@@ -278,6 +278,7 @@ export async function executeNodeHostCommand(
         trigger: params.trigger,
         unavailableReason,
         preResolvedDecision,
+        askFallback,
       })
     ) {
       const { baseDecision, approvedByAsk, deniedReason } =

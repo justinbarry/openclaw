@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@hatcloud/linear-mcp"],
+      "env": {
+        "LINEAR_API_KEY": "..."
+      }
+    }
+  }
+}

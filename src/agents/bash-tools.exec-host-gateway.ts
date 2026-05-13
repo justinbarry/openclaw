@@ -237,6 +237,7 @@ export async function processGatewayAllowlist(
         trigger: params.trigger,
         unavailableReason,
         preResolvedDecision,
+        askFallback,
       })
     ) {
       const { baseDecision, approvedByAsk, deniedReason } = createExecApprovalDecisionState({
